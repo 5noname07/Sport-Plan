@@ -1,0 +1,10 @@
+import { chromium } from '@playwright/test';
+const browser = await chromium.launch({ channel:'msedge' });
+const page = await browser.newPage();
+page.on('pageerror',e => console.log('PAGE ERROR:',e.message,e.stack));
+page.on('console',message => { if(message.type()==='error')console.log('CONSOLE:',message.text()); });
+page.on('response',response => { if(response.status()>=400)console.log('HTTP:',response.status(),response.url()); });
+await page.goto('http://127.0.0.1:4173/?demo=1');
+await page.waitForTimeout(1500);
+console.log((await page.locator('body').innerText()).slice(0,1500));
+await browser.close();

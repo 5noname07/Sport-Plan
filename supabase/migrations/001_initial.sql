@@ -95,7 +95,10 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text || p_date::text, 0));
   select id,revision into wid,current_revision from workouts where user_id=auth.uid() and date=p_date for update;
   if coalesce(current_revision,0) <> p_revision then raise exception '记录已被其他设备修改，请刷新后重试'; end if;
-  if jsonb_typeof(p_exercises) <> 'array' or jsonb_array_length(p_exercises) < 1 or jsonb_array_length(p_exercises) > 100 then
+  if p_exercises is null or jsonb_typeof(p_exercises) is distinct from 'array' then
+    raise exception '训练动作必须为数组';
+  end if;
+  if jsonb_array_length(p_exercises) < 1 or jsonb_array_length(p_exercises) > 100 then
     raise exception '至少需要一个动作，最多 100 个';
   end if;
   if wid is null then
@@ -105,7 +108,8 @@ begin
     delete from workout_exercises where workout_id=wid;
   end if;
   for item in select value from jsonb_array_elements(p_exercises) loop
-    if jsonb_typeof(item->'sets') <> 'array' or coalesce(jsonb_array_length(item->'sets'),0) < 1 or jsonb_array_length(item->'sets') > 200 then
+    if jsonb_typeof(item->'sets') is distinct from 'array' then raise exception '训练组必须为数组'; end if;
+    if jsonb_array_length(item->'sets') < 1 or jsonb_array_length(item->'sets') > 200 then
       raise exception '每个动作需要 1–200 组';
     end if;
     insert into workout_exercises(workout_id,exercise_id,position) values(wid,(item->>'exercise_id')::uuid,pos) returning id into eid;
@@ -148,9 +152,29 @@ begin
     returning id into mid;
   return mid;
 end $$;
-revoke all on function public.save_workout(date,integer,text,jsonb,integer) from public;
-revoke all on function public.delete_workout(uuid,integer) from public;
-revoke all on function public.save_meal_entry(date,uuid,numeric,uuid) from public;
+revoke all on function public.save_workout(date,integer,text,jsonb,integer) from public, anon;
+revoke all on function public.delete_workout(uuid,integer) from public, anon;
+revoke all on function public.save_meal_entry(date,uuid,numeric,uuid) from public, anon;
 grant execute on function public.save_workout(date,integer,text,jsonb,integer) to authenticated;
 grant execute on function public.delete_workout(uuid,integer) to authenticated;
 grant execute on function public.save_meal_entry(date,uuid,numeric,uuid) to authenticated;
+
+-- One SQL statement uses one MVCC snapshot. Parallel HTTP reads of parent/child tables
+-- could otherwise mix revisions while another device replaces a complete workout.
+-- JSON is a response format only; all persistent storage remains relational.
+create function public.get_records() returns jsonb
+language sql stable security invoker set search_path = public as $$
+  select jsonb_build_object(
+    'profile',(select to_jsonb(p) from profiles p where p.user_id=auth.uid()),
+    'body',coalesce((select jsonb_agg(b) from body_records b where b.user_id=auth.uid()),'[]'::jsonb),
+    'exercises',coalesce((select jsonb_agg(e) from exercises e where e.user_id=auth.uid()),'[]'::jsonb),
+    'workouts',coalesce((select jsonb_agg(w) from workouts w where w.user_id=auth.uid()),'[]'::jsonb),
+    'links',coalesce((select jsonb_agg(l) from workout_exercises l where l.user_id=auth.uid()),'[]'::jsonb),
+    'sets',coalesce((select jsonb_agg(s) from training_sets s where s.user_id=auth.uid()),'[]'::jsonb),
+    'foods',coalesce((select jsonb_agg(f) from foods f where f.user_id=auth.uid()),'[]'::jsonb),
+    'days',coalesce((select jsonb_agg(d) from meal_days d where d.user_id=auth.uid()),'[]'::jsonb),
+    'entries',coalesce((select jsonb_agg(m) from meal_entries m where m.user_id=auth.uid()),'[]'::jsonb)
+  );
+$$;
+revoke all on function public.get_records() from public, anon;
+grant execute on function public.get_records() to authenticated;
