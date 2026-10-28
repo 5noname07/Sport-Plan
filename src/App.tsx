@@ -3,8 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { configured, supabase } from './data/client';
 import { cloudRepository, type Repository } from './data/repository';
 import { createPreviewRepository } from './data/preview';
-import { EMPTY_DATA, type DataSet } from './domain/types';
-import { localDate, nutritionTarget, weightOnDate } from './domain/calculations';
+import { EMPTY_DATA, type DataSet, type SessionKind } from './domain/types';
+import { dailyNutritionTarget, localDate } from './domain/calculations';
 import { Card, type RunAction } from './components/shared';
 import { Dashboard } from './pages/Dashboard';
 import { WorkoutPage } from './pages/WorkoutPage';
@@ -12,11 +12,16 @@ import { DietPage } from './pages/DietPage';
 import { FoodsPage } from './pages/FoodsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { HistoryPage } from './pages/HistoryPage';
+import { CardioPage } from './pages/CardioPage';
+import { NotesPage } from './pages/NotesPage';
 const StatsPage = lazy(() => import('./pages/StatsPage').then((m) => ({ default: m.StatsPage })));
-type Page = 'home' | 'workout' | 'diet' | 'foods' | 'history' | 'stats' | 'profile';
+type Page =
+  'home' | 'workout' | 'diet' | 'foods' | 'history' | 'stats' | 'profile' | 'cardio' | 'notes';
 const PAGES: [Page, string, string][] = [
   ['home', '首页', '◉'],
   ['workout', '训练', '↗'],
+  ['cardio', '有氧', '◴'],
+  ['notes', '训练备注', '✎'],
   ['diet', '饮食', '◷'],
   ['foods', '食品库', '▤'],
   ['history', '历史', '▦'],
@@ -144,6 +149,7 @@ function Tracker({ demo }: { demo: boolean }) {
   const [data, setData] = useState<DataSet>(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
   const [page, setPage] = useState<Page>('home');
+  const [cardioEditId, setCardioEditId] = useState<string>();
   const [date, setDate] = useState(localDate());
   const [busy, setBusy] = useState(false);
   const actionLock = useRef(false);
@@ -258,6 +264,7 @@ function Tracker({ demo }: { demo: boolean }) {
   }
   function navigate(next: Page) {
     if (next !== page && canLeave()) {
+      if (next === 'cardio') setCardioEditId(undefined);
       setPage(next);
       setMessage('');
       window.scrollTo(0, 0);
@@ -266,12 +273,15 @@ function Tracker({ demo }: { demo: boolean }) {
   function selectDate(next: string) {
     if (next && next !== date && canLeave()) setDate(next);
   }
-  const weight = weightOnDate(data.body, date);
-  const workout = data.workouts.find((w) => w.date === date);
-  const target =
-    data.profile && weight
-      ? nutritionTarget(data.profile, weight, workout?.duration_minutes ?? 0)
-      : null;
+  function openTraining(kind: SessionKind, id: string, recordDate: string) {
+    if (!canLeave()) return;
+    setDate(recordDate);
+    setPage(kind === 'strength' ? 'workout' : 'cardio');
+    setCardioEditId(kind === 'cardio' ? id : undefined);
+    setMessage('');
+    window.scrollTo(0, 0);
+  }
+  const target = dailyNutritionTarget(data, date);
   const props = { data, repository, run, busy };
   return (
     <div className="app-shell">
@@ -413,6 +423,15 @@ function Tracker({ demo }: { demo: boolean }) {
                 }}
               />
             )}
+            {page === 'cardio' && (
+              <CardioPage
+                key={`${date}:${cardioEditId ?? ''}`}
+                {...props}
+                date={date}
+                initialId={cardioEditId}
+              />
+            )}
+            {page === 'notes' && <NotesPage {...props} openTraining={openTraining} />}
             {page === 'diet' && <DietPage key={date} {...props} date={date} target={target} />}
             {page === 'foods' && <FoodsPage {...props} />}
             {page === 'history' && (
@@ -422,6 +441,7 @@ function Tracker({ demo }: { demo: boolean }) {
                 target={target}
                 selectDate={selectDate}
                 navigate={navigate}
+                openCardio={(id) => openTraining('cardio', id, date)}
               />
             )}
             {page === 'stats' && (

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { DataSet, Macros } from '../domain/types';
 import { sumNutrition, workoutTotals } from '../domain/calculations';
 import { Card, Empty, format, NutritionProgress } from '../components/shared';
+import { CardioSummary } from '../components/TrainingSummary';
 
 export function HistoryPage({
   data,
@@ -9,19 +10,28 @@ export function HistoryPage({
   target,
   selectDate,
   navigate,
+  openCardio,
 }: {
   data: DataSet;
   date: string;
   target: Macros | null;
   selectDate: (date: string) => void;
   navigate: (page: 'workout' | 'diet') => void;
+  openCardio: (id: string) => void;
 }) {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
-  const dates = [...new Set([...data.workouts.map((w) => w.date), ...data.days.map((d) => d.date)])]
+  const dates = [
+    ...new Set([
+      ...data.workouts.map((w) => w.date),
+      ...data.days.map((d) => d.date),
+      ...data.cardio.map((s) => s.date),
+    ]),
+  ]
     .sort((a, b) => b.localeCompare(a))
     .filter((d) => (!start || d >= start) && (!end || d <= end));
   const workout = data.workouts.find((w) => w.date === date);
+  const cardio = data.cardio.filter((s) => s.date === date);
   const day = data.days.find((d) => d.date === date);
   const entries = data.entries.filter((e) => e.day_id === day?.id);
   return (
@@ -54,7 +64,8 @@ export function HistoryPage({
                   {w
                     ? `${workoutTotals(w.exercises.flatMap((e) => e.sets)).sets} 组训练`
                     : '无训练'}{' '}
-                  · {format(sumNutrition(meals).calories, 0)} kcal
+                  · 有氧 {data.cardio.filter((s) => s.date === d).length} 次 ·{' '}
+                  {format(sumNutrition(meals).calories, 0)} kcal
                 </small>
               </button>
             );
@@ -77,10 +88,24 @@ export function HistoryPage({
               ))}
             </div>
           ))}
-          {workout?.notes && <p>备注：{workout.notes}</p>}
+          {workout?.notes && <p className="preserve-lines">备注：{workout.notes}</p>}
           <button className="secondary" onClick={() => navigate('workout')}>
             记录 / 修改训练
           </button>
+        </Card>
+        <Card title="有氧训练详情">
+          {!cardio.length && <Empty>这一天没有有氧训练。</Empty>}
+          {cardio.map((s) => (
+            <article className="record" key={s.id}>
+              <div>
+                <CardioSummary session={s} />
+                {s.notes && <p className="preserve-lines">备注：{s.notes}</p>}
+              </div>
+              <button className="text-button" onClick={() => openCardio(s.id)}>
+                打开这条有氧
+              </button>
+            </article>
+          ))}
         </Card>
         <Card title="饮食详情">
           {!entries.length && <Empty>这一天没有饮食记录。</Empty>}

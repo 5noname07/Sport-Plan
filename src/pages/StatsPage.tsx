@@ -11,6 +11,7 @@ import {
 import type { DataSet } from '../domain/types';
 import { exerciseTrend, localDate } from '../domain/calculations';
 import { Card, Empty, format } from '../components/shared';
+import { cardioTrend, cardioTotals, CARDIO_ACTIVITIES } from '../domain/cardio';
 
 const METRICS = [
   { key: 'maxWeight', label: '最大训练重量', unit: 'kg' },
@@ -78,6 +79,19 @@ export function StatsPage({ data }: { data: DataSet }) {
   const [start, setStart] = useState(localDate(initial));
   const [end, setEnd] = useState(localDate());
   const [metric, setMetric] = useState('maxWeight');
+  const [cardioMetric, setCardioMetric] = useState('minutes');
+  const [cardioActivity, setCardioActivity] = useState('');
+  const cardio = data.cardio.filter(
+    (s) => (!cardioActivity || s.activity === cardioActivity) && s.date >= start && s.date <= end,
+  );
+  const aerobic = cardioTotals(cardio);
+  const cardioMeta = (
+    {
+      minutes: { label: '有氧总时长', unit: '分钟' },
+      count: { label: '有氧次数', unit: '次' },
+      distanceKm: { label: '有氧总距离', unit: 'km' },
+    } as const
+  )[cardioMetric as 'minutes' | 'count' | 'distanceKm'];
   const meta = METRICS.find((m) => m.key === metric)!;
   const rows = exerciseTrend(data.workouts, exercise, start, end);
   const body = data.body
@@ -101,7 +115,11 @@ export function StatsPage({ data }: { data: DataSet }) {
           </label>
           <label>
             趋势指标
-            <select value={metric} onChange={(e) => setMetric(e.target.value)}>
+            <select
+              aria-label="趋势指标"
+              value={metric}
+              onChange={(e) => setMetric(e.target.value)}
+            >
               {METRICS.map((m) => (
                 <option value={m.key} key={m.key}>
                   {m.label}（{m.unit}）
@@ -147,6 +165,49 @@ export function StatsPage({ data }: { data: DataSet }) {
           unit="kg"
           label="体重"
         />
+      </Card>
+      <Card title="有氧训练趋势">
+        <p className="muted">
+          沿用上方日期范围：{start} 至 {end}。
+        </p>
+        <div className="form-grid">
+          <label>
+            有氧趋势类型
+            <select value={cardioActivity} onChange={(e) => setCardioActivity(e.target.value)}>
+              <option value="">全部类型</option>
+              {Object.entries(CARDIO_ACTIVITIES).map(([key, m]) => (
+                <option key={key} value={key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            有氧趋势指标
+            <select value={cardioMetric} onChange={(e) => setCardioMetric(e.target.value)}>
+              <option value="minutes">总时长</option>
+              <option value="count">训练次数</option>
+              <option value="distanceKm">已记录距离</option>
+            </select>
+          </label>
+        </div>
+        <p>
+          共 {aerobic.count} 次 · {format(aerobic.minutes)} 分钟 · {format(aerobic.distanceKm, 2)}{' '}
+          km
+        </p>
+        <TrendChart
+          rows={cardioTrend(cardio, start, end).filter(
+            (r) =>
+              cardioMetric === 'count' ||
+              (cardioMetric === 'minutes' ? r.timed > 0 : r.measured > 0),
+          )}
+          metric={cardioMetric}
+          label={cardioMeta.label}
+          unit={cardioMeta.unit}
+        />
+        <p className="hint">
+          只汇总已录入的时长与距离；无测量数据的日期不绘制伪零值。跨运动类型的距离仅作合计，建议选择同一类型比较。
+        </p>
       </Card>
     </div>
   );

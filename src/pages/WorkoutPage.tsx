@@ -3,6 +3,7 @@ import type { DataSet, Workout } from '../domain/types';
 import type { Repository } from '../data/repository';
 import { workoutTotals } from '../domain/calculations';
 import { Card, Empty, format, type RunAction } from '../components/shared';
+import { ExerciseNotes } from '../components/ExerciseNotes';
 
 // Keep text while editing so a phone user can clear an input or enter a decimal naturally.
 type DraftExercise = {
@@ -51,6 +52,7 @@ export function WorkoutPage({
   const [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState('');
   const [newName, setNewName] = useState('');
+  const [newNotes, setNewNotes] = useState('');
   useEffect(() => {
     if (!dirty)
       setDraft(
@@ -110,7 +112,9 @@ export function WorkoutPage({
             </label>
             <label>
               训练备注
-              <input
+              <textarea
+                aria-label="训练备注"
+                rows={3}
                 maxLength={2000}
                 value={draft.notes}
                 placeholder="状态、动作要点…"
@@ -119,7 +123,8 @@ export function WorkoutPage({
             </label>
           </div>
           <p className="hint">
-            实际时长用于估算额外消耗；填 0 表示不追加训练热量。日常活动系数不含本次训练。
+            实际时长用于估算额外消耗；只填写力量部分，有氧在独立记录中填写。填 0
+            表示不追加力量热量。日常活动系数不含专门训练。
           </p>
           {draft.exercises.length === 0 && (
             <Empty>从下面选择一个动作，开始记录今天的第一组。</Empty>
@@ -151,6 +156,15 @@ export function WorkoutPage({
                     移除动作
                   </button>
                 </div>
+                {exercise && (
+                  <ExerciseNotes
+                    key={exercise.id}
+                    exercise={exercise}
+                    repository={repository}
+                    run={run}
+                    busy={busy}
+                  />
+                )}
                 {previous && (
                   <div className="previous">
                     <span>
@@ -287,7 +301,11 @@ export function WorkoutPage({
         <div className="add-exercise">
           <label>
             选择动作
-            <select value={selected} onChange={(e) => setSelected(e.target.value)}>
+            <select
+              aria-label="选择动作"
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
               <option value="">请选择动作</option>
               {available.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -313,11 +331,28 @@ export function WorkoutPage({
             ＋ 添加动作
           </button>
         </div>
+        {selected && (
+          <ExerciseNotes
+            key={selected}
+            exercise={data.exercises.find((e) => e.id === selected)!}
+            repository={repository}
+            run={run}
+            busy={busy}
+          />
+        )}
         <form
           className="inline-form"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (await run(() => repository.saveExercise(newName), '动作已新增')) setNewName('');
+            if (
+              await run(
+                () => repository.saveExercise(newName, undefined, newNotes || undefined),
+                '动作已新增',
+              )
+            ) {
+              setNewName('');
+              setNewNotes('');
+            }
           }}
         >
           <label>
@@ -328,6 +363,15 @@ export function WorkoutPage({
               maxLength={80}
               placeholder="例如：哑铃划船"
               onChange={(e) => setNewName(e.target.value)}
+            />
+          </label>
+          <label>
+            新动作备注（可选）
+            <textarea
+              value={newNotes}
+              maxLength={4000}
+              rows={2}
+              onChange={(e) => setNewNotes(e.target.value)}
             />
           </label>
           <button className="secondary" disabled={busy || !newName.trim()}>

@@ -20,6 +20,7 @@ export function ProfilePage({
   const [date, setDate] = useState(localDate());
   const [bodyId, setBodyId] = useState<string>();
   const [exerciseName, setExerciseName] = useState('');
+  const [exerciseNotes, setExerciseNotes] = useState('');
   const [exerciseId, setExerciseId] = useState<string>();
   const [exporting, setExporting] = useState(false);
   const body = [...data.body].sort((a, b) => b.date.localeCompare(a.date));
@@ -202,8 +203,19 @@ export function ProfilePage({
           className="inline-form"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (await run(() => repository.saveExercise(exerciseName, exerciseId), '动作已保存')) {
+            if (
+              await run(
+                () =>
+                  repository.saveExercise(
+                    exerciseName,
+                    exerciseId,
+                    exerciseId ? exerciseNotes : exerciseNotes || undefined,
+                  ),
+                '动作已保存',
+              )
+            ) {
               setExerciseName('');
+              setExerciseNotes('');
               setExerciseId(undefined);
             }
           }}
@@ -218,6 +230,16 @@ export function ProfilePage({
               onChange={(e) => setExerciseName(e.target.value)}
             />
           </label>
+          <label>
+            动作备注（长期共享）
+            <textarea
+              value={exerciseNotes}
+              maxLength={4000}
+              rows={3}
+              placeholder="动作要领、发力技巧、注意事项…"
+              onChange={(e) => setExerciseNotes(e.target.value)}
+            />
+          </label>
           <button disabled={busy || !exerciseName.trim()}>
             {exerciseId ? '保存动作名称' : '添加动作'}
           </button>
@@ -228,6 +250,7 @@ export function ProfilePage({
               onClick={() => {
                 setExerciseId(undefined);
                 setExerciseName('');
+                setExerciseNotes('');
               }}
             >
               取消
@@ -239,13 +262,19 @@ export function ProfilePage({
             .filter((e) => !e.archived)
             .map((exercise) => (
               <div key={exercise.id} className="record">
-                <strong>{exercise.name}</strong>
+                <div>
+                  <strong>{exercise.name}</strong>
+                  <p className="preserve-lines muted">
+                    {exercise.notes || '尚无动作备注，可点击编辑添加。'}
+                  </p>
+                </div>
                 <div className="actions">
                   <button
                     className="text-button"
                     onClick={() => {
                       setExerciseId(exercise.id);
                       setExerciseName(exercise.name);
+                      setExerciseNotes(exercise.notes ?? '');
                     }}
                   >
                     编辑
@@ -280,6 +309,12 @@ export function ProfilePage({
             </p>
             <p>
               活动系数是实用近似值，训练容量不能直接换算热量。动作节奏、休息、个人差异都会影响实际消耗。
+            </p>
+            <p>
+              有氧训练按记录类型和已录入时长估算净 MET
+              消耗，逐项累加；缺少时长或“其他有氧”不追加。跑步按一般慢跑 7.5 MET，骑行按休闲 4
+              MET，游泳按慢速休闲自由泳 5.8 MET，椭圆机中等强度 5 MET，专门步行 3.5
+              MET。距离与心率不用于推测强度。已包含在日常活动中的运动请取消“计入营养调整”，力量时长也只填写力量部分。
             </p>
             <p>
               <a href="https://pubmed.ncbi.nlm.nih.gov/2305711/" target="_blank" rel="noreferrer">

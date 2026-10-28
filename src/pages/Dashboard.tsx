@@ -1,4 +1,8 @@
-import type { DataSet, Macros } from '../domain/types';
+import type { DataSet } from '../domain/types';
+import type { NutritionTarget } from '../domain/calculations';
+import { cardioTotals } from '../domain/cardio';
+import { NutritionExplanation } from '../components/NutritionExplanation';
+import { CardioSummary } from '../components/TrainingSummary';
 import { sumNutrition, workoutTotals } from '../domain/calculations';
 import { Card, Empty, format, NutritionProgress } from '../components/shared';
 
@@ -10,10 +14,12 @@ export function Dashboard({
 }: {
   data: DataSet;
   date: string;
-  target: Macros | null;
-  navigate: (page: 'workout' | 'diet' | 'profile') => void;
+  target: NutritionTarget | null;
+  navigate: (page: 'workout' | 'diet' | 'profile' | 'cardio') => void;
 }) {
   const workout = data.workouts.find((w) => w.date === date);
+  const cardio = data.cardio.filter((s) => s.date === date);
+  const aerobic = cardioTotals(cardio);
   const totals = workoutTotals(workout?.exercises.flatMap((e) => e.sets) ?? []);
   const day = data.days.find((d) => d.date === date);
   const actual = sumNutrition(data.entries.filter((e) => e.day_id === day?.id));
@@ -34,13 +40,19 @@ export function Dashboard({
           <button className="secondary" onClick={() => navigate('diet')}>
             ＋ 记录饮食
           </button>
+          <button className="secondary" onClick={() => navigate('cardio')}>
+            ＋ 记录有氧
+          </button>
         </div>
       </section>
       <div className="stats-grid">
         <div className="stat">
           <small>训练状态</small>
-          <strong>{workout ? '已记录' : '待训练'}</strong>
-          <span>{workout ? `${workout.exercises.length} 个动作` : '休息也是计划的一部分'}</span>
+          <strong>{workout || cardio.length ? '已记录' : '待训练'}</strong>
+          <span>
+            {workout ? `力量 ${workout.exercises.length} 个动作` : '无力量训练'} · 有氧{' '}
+            {cardio.length} 次
+          </span>
         </div>
         <div className="stat">
           <small>训练组数</small>
@@ -77,6 +89,26 @@ export function Dashboard({
           </div>
         )}
         <NutritionProgress actual={actual} target={target} />
+        <NutritionExplanation
+          target={target}
+          strengthCount={workout ? 1 : 0}
+          cardioCount={cardio.length}
+        />
+      </Card>
+      <Card title="当天有氧训练">
+        <p>
+          共 {aerobic.count} 次 · 已记录 {format(aerobic.minutes)} 分钟 ·{' '}
+          {format(aerobic.distanceKm, 2)} km
+        </p>
+        {!cardio.length && <Empty>还没有有氧记录，可独立记录，也可与力量训练在同一天进行。</Empty>}
+        {cardio.map((s) => (
+          <article className="record" key={s.id}>
+            <CardioSummary session={s} />
+          </article>
+        ))}
+        <button className="secondary" onClick={() => navigate('cardio')}>
+          查看 / 记录有氧
+        </button>
       </Card>
       <Card title="当天训练">
         {!workout ? (

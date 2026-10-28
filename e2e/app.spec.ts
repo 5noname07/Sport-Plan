@@ -89,7 +89,17 @@ test('全部页面无水平溢出，趋势四指标正常，体重与动作可�
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const nav = page.getByRole('navigation');
-  for (const name of ['首页', '训练', '饮食', '食品库', '历史', '趋势', '设置']) {
+  for (const name of [
+    '首页',
+    '训练',
+    '有氧',
+    '训练备注',
+    '饮食',
+    '食品库',
+    '历史',
+    '趋势',
+    '设置',
+  ]) {
     await nav.getByRole('button', { name, exact: true }).click();
     await expect(page.locator('.topbar h2')).toHaveText(name);
     await expect
@@ -102,7 +112,7 @@ test('全部页面无水平溢出，趋势四指标正常，体重与动作可�
         '总次数（次）',
         '训练容量（kg）',
       ]) {
-        await page.getByLabel('趋势指标').selectOption({ label });
+        await page.getByLabel('趋势指标', { exact: true }).selectOption({ label });
         await expect(
           page.getByRole('img', { name: label.replace(/（.+）/, '') + '折线图' }),
         ).toBeVisible();
