@@ -1,6 +1,7 @@
 import type { Repository } from './repository';
 import { localDate, scaleFood } from '../domain/calculations';
 import { EMPTY_DATA, type DataSet } from '../domain/types';
+import { createRecordId } from '../domain/id';
 // Explicit preview only: no localStorage and no illusion of durable or cloud-synced data.
 export function createPreviewRepository(): Repository {
   const today = localDate();
@@ -61,7 +62,7 @@ export function createPreviewRepository(): Repository {
       ],
     });
   }
-  const id = () => crypto.randomUUID();
+  const id = createRecordId;
   return {
     async load() {
       return structuredClone(data);
@@ -79,13 +80,45 @@ export function createPreviewRepository(): Repository {
     async deleteWeight(recordId) {
       data.body = data.body.filter((r) => r.id !== recordId);
     },
-    async saveExercise(name, recordId) {
-      if (recordId) data.exercises.find((e) => e.id === recordId)!.name = name;
-      else {
+    async saveExercise(name, recordId, notes) {
+      if (recordId) {
+        const exercise = data.exercises.find((e) => e.id === recordId)!;
+        exercise.name = name;
+        if (notes !== undefined) exercise.notes = notes;
+      } else {
         const existing = data.exercises.find((e) => e.name === name);
-        if (existing) existing.archived = false;
-        else data.exercises.push({ id: id(), name, archived: false });
+        if (existing) {
+          existing.archived = false;
+          if (notes !== undefined) existing.notes = notes;
+        } else data.exercises.push({ id: id(), name, archived: false, notes: notes ?? '' });
       }
+    },
+    async saveExerciseNotes(recordId, notes) {
+      data.exercises.find((e) => e.id === recordId)!.notes = notes;
+    },
+    async saveTrainingNotes(kind, recordId, notes, revision) {
+      const session = (kind === 'strength' ? data.workouts : data.cardio).find(
+        (s) => s.id === recordId,
+      );
+      if (!session || session.revision !== revision)
+        throw new Error('训练记录已改变，请刷新后重试');
+      session.notes = notes;
+      session.revision++;
+    },
+    async saveCardio(session) {
+      const old = data.cardio.find((s) => s.id === session.id);
+      if ((old?.revision ?? 0) !== session.revision)
+        throw new Error('有氧记录已改变，请刷新后重试');
+      data.cardio = [
+        ...data.cardio.filter((s) => s.id !== session.id),
+        structuredClone({ ...session, revision: session.revision + 1 }),
+      ];
+    },
+    async deleteCardio(session) {
+      const old = data.cardio.find((s) => s.id === session.id);
+      if (!old || old.revision !== session.revision)
+        throw new Error('有氧记录已改变，请刷新后重试');
+      data.cardio = data.cardio.filter((s) => s.id !== session.id);
     },
     async archiveExercise(recordId) {
       data.exercises.find((e) => e.id === recordId)!.archived = true;

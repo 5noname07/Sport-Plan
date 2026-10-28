@@ -1,4 +1,12 @@
-import type { DataSet, Food, Profile, TrainingSet, Workout } from '../domain/types';
+import type {
+  CardioSession,
+  DataSet,
+  Food,
+  Profile,
+  SessionKind,
+  TrainingSet,
+  Workout,
+} from '../domain/types';
 import { supabase } from './client';
 
 export interface Repository {
@@ -6,7 +14,11 @@ export interface Repository {
   saveProfile(profile: Profile): Promise<void>;
   saveWeight(date: string, weight: number, id?: string): Promise<void>;
   deleteWeight(id: string): Promise<void>;
-  saveExercise(name: string, id?: string): Promise<void>;
+  saveExercise(name: string, id?: string, notes?: string): Promise<void>;
+  saveExerciseNotes(id: string, notes: string): Promise<void>;
+  saveTrainingNotes(kind: SessionKind, id: string, notes: string, revision: number): Promise<void>;
+  saveCardio(session: CardioSession): Promise<void>;
+  deleteCardio(session: CardioSession): Promise<void>;
   archiveExercise(id: string): Promise<void>;
   saveWorkout(workout: Workout): Promise<void>;
   deleteWorkout(workout: Workout): Promise<void>;
@@ -29,6 +41,7 @@ async function userId() {
   return data.user.id;
 }
 interface Snapshot extends Omit<DataSet, 'workouts'> {
+  schema_version?: number;
   workouts: Omit<Workout, 'exercises'>[];
   links: { id: string; workout_id: string; exercise_id: string; position: number }[];
   sets: (TrainingSet & { workout_exercise_id: string; position: number })[];
@@ -39,7 +52,11 @@ export const cloudRepository: Repository = {
     const { data, error } = await db().rpc('get_records');
     check(error);
     if (!data) throw new Error('未读取到数据库记录，请检查迁移是否完成');
-    const { profile, body, exercises, workouts, links, sets, foods, days, entries } =
+    if (data.schema_version !== 2)
+      throw new Error(
+        '数据库需要升级：请在 Supabase 执行 002_notes_and_cardio.sql，然后刷新。原数据不会被删除。',
+      );
+    const { profile, body, exercises, workouts, links, sets, foods, days, entries, cardio } =
       data as Snapshot;
     const setsByExercise = new Map<string, Snapshot['sets']>();
     for (const set of sets) {
@@ -56,7 +73,8 @@ export const cloudRepository: Repository = {
     return {
       profile,
       body,
-      exercises,
+      exercises: exercises.map((e) => ({ ...e, notes: e.notes ?? '' })),
+      cardio: cardio ?? [],
       foods,
       days,
       entries,
@@ -99,21 +117,53 @@ export const cloudRepository: Repository = {
     const { error } = await db().from('body_records').delete().eq('id', id).select('id').single();
     check(error);
   },
-  async saveExercise(name, id) {
-    const result = id
-      ? await db()
-          .from('exercises')
-          .update({ name: name.trim() })
-          .eq('id', id)
-          .select('id')
-          .single()
-      : await db()
-          .from('exercises')
-          .upsert(
-            { user_id: await userId(), name: name.trim(), archived: false },
-            { onConflict: 'user_id,name' },
-          );
-    check(result.error);
+  async saveExercise(name, id, notes) {
+    const { error } = await db().rpc('save_exercise', {
+      p_name: name,
+      p_id: id ?? null,
+      p_notes: notes ?? null,
+    });
+    check(error);
+  },
+  async saveExerciseNotes(id, notes) {
+    const { error } = await db()
+      .from('exercises')
+      .update({ notes })
+      .eq('id', id)
+      .select('id')
+      .single();
+    check(error);
+  },
+  async saveTrainingNotes(kind, id, notes, revision) {
+    const { error } = await db().rpc('update_training_notes', {
+      p_kind: kind,
+      p_id: id,
+      p_notes: notes,
+      p_revision: revision,
+    });
+    check(error);
+  },
+  async saveCardio(session) {
+    const { error } = await db().rpc('save_cardio', {
+      p_id: session.id,
+      p_revision: session.revision,
+      p_date: session.date,
+      p_start_time: session.start_time,
+      p_activity: session.activity,
+      p_duration: session.duration_minutes,
+      p_distance: session.distance_km,
+      p_heart_rate: session.average_heart_rate,
+      p_notes: session.notes,
+      p_include: session.include_in_nutrition,
+    });
+    check(error);
+  },
+  async deleteCardio(session) {
+    const { error } = await db().rpc('delete_cardio', {
+      p_id: session.id,
+      p_revision: session.revision,
+    });
+    check(error);
   },
   async archiveExercise(id) {
     const { error } = await db()

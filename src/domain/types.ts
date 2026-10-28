@@ -22,7 +22,23 @@ export interface Exercise {
   id: string;
   name: string;
   archived: boolean;
+  notes?: string; // Pre-002 snapshots have no notes; display as empty.
 }
+export type CardioActivity =
+  'running' | 'cycling' | 'swimming' | 'elliptical' | 'walking' | 'other';
+export interface CardioSession {
+  id: string;
+  date: string;
+  start_time: string | null; // Local wall time paired with date, not a UTC instant.
+  activity: CardioActivity;
+  duration_minutes: number | null;
+  distance_km: number | null;
+  average_heart_rate: number | null;
+  notes: string;
+  include_in_nutrition: boolean;
+  revision: number;
+}
+export type SessionKind = 'strength' | 'cardio';
 export interface TrainingSet {
   weight_kg: number;
   reps: number;
@@ -65,6 +81,7 @@ export interface DataSet {
   foods: Food[];
   days: MealDay[];
   entries: MealEntry[];
+  cardio: CardioSession[];
 }
 export const EMPTY_DATA: DataSet = {
   profile: null,
@@ -74,4 +91,5 @@ export const EMPTY_DATA: DataSet = {
   foods: [],
   days: [],
   entries: [],
+  cardio: [],
 };

@@ -1,4 +1,14 @@
-import type { BodyRecord, Food, Macros, Profile, TrainingSet, Workout } from './types';
+import type {
+  BodyRecord,
+  CardioSession,
+  DataSet,
+  Food,
+  Macros,
+  Profile,
+  TrainingSet,
+  Workout,
+} from './types';
+import { cardioEnergy, dayTraining } from './cardio';
 
 export const NUTRITION_PARAMETERS = {
   // Mifflin & St Jeor (1990), PMID 2305711; kcal/day, kg, cm, years.
@@ -60,7 +70,12 @@ export function sumNutrition(entries: Macros[]): Macros {
     { calories: 0, protein: 0, carbs: 0, fat: 0 },
   );
 }
-export function nutritionTarget(profile: Profile, weight: number, durationMinutes: number) {
+export function nutritionTarget(
+  profile: Profile,
+  weight: number,
+  durationMinutes: number,
+  cardio: CardioSession[] = [],
+) {
   if (weight <= 0 || profile.height_cm <= 0 || profile.age < 18 || durationMinutes < 0)
     throw new Error('请填写有效的成人身体信息和训练时长');
   const p = NUTRITION_PARAMETERS;
@@ -69,15 +84,46 @@ export function nutritionTarget(profile: Profile, weight: number, durationMinute
     p.heightCoefficient * profile.height_cm -
     p.ageCoefficient * profile.age +
     (profile.sex === 'male' ? p.maleOffset : p.femaleOffset);
-  const trainingCalories = (((p.resistanceMET - 1) * 3.5 * weight) / 200) * durationMinutes;
-  const calories = bmr * profile.activity_factor + trainingCalories;
+  const strengthCalories = (((p.resistanceMET - 1) * 3.5 * weight) / 200) * durationMinutes;
+  const cardioCalories = cardio.reduce(
+    (sum, session) => sum + (cardioEnergy(session, weight) ?? 0),
+    0,
+  );
+  const trainingCalories = strengthCalories + cardioCalories;
+  const baseCalories = bmr * profile.activity_factor;
+  const calories = baseCalories + trainingCalories;
   const protein = weight * profile.protein_per_kg;
   const fat = (calories * profile.fat_fraction) / p.kcalPerGramFat;
   const carbs = Math.max(
     0,
     (calories - protein * p.kcalPerGramProtein - fat * p.kcalPerGramFat) / p.kcalPerGramCarbs,
   );
-  return { calories, protein, fat, carbs, bmr, trainingCalories };
+  return {
+    calories,
+    protein,
+    fat,
+    carbs,
+    bmr,
+    trainingCalories,
+    baseCalories,
+    strengthCalories,
+    cardioCalories,
+    unestimatedCardio: cardio.filter(
+      (s) => s.include_in_nutrition && cardioEnergy(s, weight) === null,
+    ).length,
+  };
+}
+export type NutritionTarget = ReturnType<typeof nutritionTarget>;
+export function dailyNutritionTarget(data: DataSet, date: string) {
+  const weight = weightOnDate(data.body, date);
+  if (!data.profile || !weight) return null;
+  const activities = dayTraining(data, date);
+  return nutritionTarget(
+    data.profile,
+    weight,
+    activities.strength.reduce((sum, w) => sum + w.duration_minutes, 0),
+    activities.cardio,
+  );
 }
 export function weightOnDate(records: BodyRecord[], date: string) {
   return records.filter((r) => r.date <= date).sort((a, b) => b.date.localeCompare(a.date))[0]
