@@ -1,5 +1,7 @@
 # Sport Plan
 
+**本轮升级：动作独立备注、训练备注专区、独立有氧记录与综合营养目标。已有数据库先执行 `supabase/migrations/002_notes_and_cardio.sql`，再部署新前端。完整步骤及验收见 [002 升级说明](docs/upgrade-002.md)。不要重跑 001 或删表重建。**
+
 供个人长期使用的力量训练与饮食手账。响应式 Web / PWA，Windows 和手机访问同一站点、登录同一账号，数据保存在 Supabase PostgreSQL。没有注册、社交、AI 教练、商业化或后台管理功能。
 
 ## 已实现
@@ -13,6 +15,9 @@
 - 基于 BMR、活动水平、实际训练时长的营养估算；参数集中管理。
 - 首页快捷录入、日期历史、手机底部导航、深浅色、PWA、JSON 导出。
 - 邮箱密码登录、数据库 RLS、训练事务及版本冲突保护、保存失败提示。
+- 动作长期备注、按训练 ID 编辑/跳转的整体备注专区。
+- 独立有氧增删改，同日多项、可选运动指标、配速/速度、历史和趋势。
+- 营养目标汇总当天力量与全部计入的有氧净消耗，可排除已计入日常活动的运动。
 
 **交付状态：代码可构建、可预览；正式使用需由项目所有者创建 Supabase 项目并部署前端。未配置时可打开明确标记的临时预览，示例数据只在内存，刷新后重置。真实云端登录与两端同步需接入项目后验收。**
 
@@ -35,6 +40,8 @@ scripts/                   Windows 图标生成与浏览器诊断工具
 ```
 
 ## 数据库模型
+
+本轮新增独立的 `cardio_sessions` 表，动作库新增 `exercises.notes`。力量整体备注保留在 `workouts.notes`，有氧整体备注为 `cardio_sessions.notes`；详情、关联与兼容性见 [002 升级说明](docs/upgrade-002.md)。下表保留初版模型说明。
 
 所有业务表带 `user_id`，只允许登录身份访问自己的行；子表复合外键保证父记录属于同一身份。公开注册必须关闭，只在后台创建一个个人账号。RLS 用于保护公开 Web API 的数据，不是多用户管理功能。
 
@@ -81,7 +88,7 @@ npm run test:e2e  # 桌面/手机完整录入与修改删除；先 build
 ## Supabase 初始化
 
 1. 在 [Supabase 后台](https://supabase.com/dashboard) 创建项目，选合适区域。数据库密码自行保存在密码管理器，不提交仓库。
-2. 在 **SQL Editor** 执行 `supabase/migrations/001_initial.sql` 全文一次。
+2. 新项目在 **SQL Editor** 依次执行 `supabase/migrations/001_initial.sql`、`supabase/migrations/002_notes_and_cardio.sql`，各一次。已初始化的旧项目只执行 002。
 3. 在 **Authentication → Users** 添加你的邮箱密码账号，确保邮箱已确认。没有注册页，不需要自建邮件发送服务。
 4. 在 Authentication 配置关闭 **Allow new users to sign up**，关闭匿名登录，只保留邮箱密码登录。账号管理在后台进行。
 5. 在 Connect / Settings → API Keys 查找项目 URL 与 **publishable key**（`sb_publishable_...`）；旧版 `anon` 公共密钥也可用。
@@ -144,6 +151,7 @@ PWA 提供图标和独立窗口，不支持离线写入。已有页面离线时�
 - BMR：`10×kg + 6.25×cm − 5×年龄 + 常数`（男 +5，女 −161）。[Mifflin–St Jeor 原始研究](https://pubmed.ncbi.nlm.nih.gov/2305711/)。
 - 日常能量：BMR × 1.2 / 1.4 / 1.6；实用近似参数，不含专门训练。
 - 训练净消耗：`(3.5−1)×3.5×kg/200×实际分钟`。3.5 MET 参考 [2024 Compendium resistance training 02054](https://pacompendium.com/conditioning-exercise/)。扣除静息 1 MET 避免重复。0 分钟不追加；训练容量不能直接换算热量。
+- 有氧逐项按 `(运动 MET−1)×3.5×kg/200×分钟` 估算净消耗，与力量相加。类型/强度假设在界面展示，参数集中在 `src/domain/cardio.ts`；缺时长/体重或“其他”不估算，不从距离/心率猜测强度。力量分钟仅填力量部分，已含在日常活动中的有氧关闭“计入营养调整”。
 - 蛋白质：默认 1.6 g/kg，可调 1.4–2.0。[ISSN 2017](https://pmc.ncbi.nlm.nih.gov/articles/PMC5477153/)。
 - 脂肪：默认热量 30%，可调 20–35%，是实用分配参数，不是个体营养处方。碳水承接剩余；4 / 4 / 9 kcal/g，展示时才舍入。
 - 体重使用所选日或之前最近记录，不能用未来体重。缺少身体信息/该日体重则不生成建议。历史目标按当前年龄、身高、营养参数重新估算，**不是冻结的当日处方**；历史实际摄入有快照。
